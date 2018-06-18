@@ -147,7 +147,6 @@ class Config(object):
            res = tostring(response)
            res_json = jxmlease.parse(res)
            data_json = res_json["rpc-reply"]["data"]
-           q(data_json)
 
         return found, data_json
 
@@ -169,6 +168,9 @@ class OpenConfig(object):
              self._data_model = data_model
              self.get_depend_data_models()
              self.copy_data_models_in_searchpath(YANG_SEARCH_PATH)
+             pyang_obj = PyangLib()
+             for schema in self._schema:
+                 pyang_obj.run(schema, YANG_SEARCH_PATH, (schema + '.xml'))
            else:
              #TODO raise exception
              self._data_model = None
@@ -206,22 +208,34 @@ class PyangLib(object):
     def find_path_module(self, modulename):
         paths = os.environ['PATH'].split(os.pathsep)
         for dirname in paths:
-            fullpath = os.path.join(dirname, filename)
+            fullpath = os.path.join(dirname, modulename)
             if os.path.isfile(fullpath):
             	return fullpath
+        return None
    
     def run(self, data_model_file, searchpath, output):
-        import imp
+        import subprocess
         
+        searchpathdir = to_bytes(unfrackpath(searchpath),
+                errors='surrogate_or_strict')
+        final_file = to_bytes(os.path.join(searchpathdir, data_model_file),
+                errors='surrogate_or_strict')
+        yang_file = final_file + '.yang'
+        output_file = to_bytes(os.path.join(searchpathdir, output),
+                errors='surrogate_or_strict')
+
         pyang_exe_path = self.find_path_module('pyang')
-        pyang_exec = imp.load_source('pyang', pyang_exe_path)
- 
-        sys.argv = [pyang_exec_path, '-p', searchpath, data_model_file,
-                              '-f', 'sample-xml-skeleton', -o , output]
+        if pyang_exe_path == None:
+            module.fail_json(msg="Please install pyang for this module" +
+                                 "sudo pip install pyang")
         try:
-	    pyang_exec.run()
-        except SystemExit:
-            pass
+            output = subprocess.check_output(['pyang', '-p', searchpathdir,
+                          '-f', 'sample-xml-skeleton', '-o' , output_file,
+                          yang_file])
+        except subprocess.CalledProcessError as e:
+            module.fail_json(msg="command '{}' return with error (code {}): {}".format(e.cmd,
+                        e.returncode, e.output))
+        q(output)
         return
     
 
